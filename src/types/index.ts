@@ -1,7 +1,7 @@
 export interface Agent {
   id: string;
   name: string;
-  role: 'CEO' | 'COO' | 'CMO' | 'CTO' | 'CRO' | 'CGO' | 'Atlas' | 'Velocity' | 'Monarch' | 'Growth' | 'Nova';
+  role: string;
   status: 'online' | 'offline' | 'busy';
   currentTask?: string;
   lastActive: string;
@@ -83,9 +83,9 @@ export interface WebSocketMessage {
   timestamp: string;
 }
 
-export type AgentRole = 'CEO' | 'COO' | 'CMO' | 'CTO' | 'CRO' | 'CGO' | 'Atlas' | 'Velocity' | 'Monarch' | 'Growth' | 'Nova';
+export type AgentRole = string;
 
-export const AGENT_ROLES: Record<AgentRole, { label: string; color: string; icon: string }> = {
+export const AGENT_ROLES: Record<string, { label: string; color: string; icon: string }> = {
   CEO: { label: 'Chief Executive Officer', color: '#3b82f6', icon: 'Building2' },
   COO: { label: 'Chief Operating Officer', color: '#f59e0b', icon: 'Zap' },
   CMO: { label: 'Chief Marketing Officer', color: '#8b5cf6', icon: 'Crown' },

@@ -262,7 +262,7 @@ export async function fetchSubagents(): Promise<{ agents: Agent[]; error?: strin
     const agents: Agent[] = sessions.map((session: any) => ({
       id: session.key?.split(':').pop() || session.id || 'unknown',
       name: parseRoleFromKey(session.key || session.label || ''),
-      role: parseRoleFromKey(session.key || session.label || ''),
+      role: parseRoleFromKey(session.key || session.label || '') as Agent['role'],
       status: determineStatus({
         ...session,
         startedAt: new Date(session.created_at || session.startedAt || Date.now()).getTime(),

@@ -38,7 +38,7 @@ export interface SubagentInfo {
 export interface Agent {
   id: string;
   name: string;
-  role: 'CEO' | 'COO' | 'CMO' | 'CTO' | 'CRO' | 'CGO' | 'Atlas' | 'Velocity' | 'Monarch' | 'Growth' | 'Nova';
+  role: string;
   status: 'online' | 'offline' | 'busy';
   currentTask?: string;
   lastActive: string;
