@@ -1,0 +1,11 @@
+{
+  "exportedAt": "2026-02-23T12:23:48.638Z",
+  "source": "sqlite",
+  "dbPath": "/root/.openclaw/workspace/apexos-db/mission-control.db",
+  "counts": {
+    "agents": 6,
+    "tasks": 4,
+    "sessions": 0,
+    "cronJobs": 0
+  }
+}

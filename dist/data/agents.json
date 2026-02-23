@@ -1,0 +1,56 @@
+[
+  {
+    "id": "henal",
+    "name": "Henal",
+    "role": "CEO",
+    "status": "online",
+    "last_active": "2026-02-23 10:52:35",
+    "current_task": null,
+    "color": "#8B5CF6"
+  },
+  {
+    "id": "atlas",
+    "name": "Atlas",
+    "role": "COO",
+    "status": "online",
+    "last_active": "2026-02-23 10:52:35",
+    "current_task": null,
+    "color": "#3B82F6"
+  },
+  {
+    "id": "velocity",
+    "name": "Velocity",
+    "role": "CTO",
+    "status": "online",
+    "last_active": "2026-02-23 10:52:35",
+    "current_task": null,
+    "color": "#10B981"
+  },
+  {
+    "id": "monarch",
+    "name": "Monarch",
+    "role": "CFO",
+    "status": "online",
+    "last_active": "2026-02-23 10:52:35",
+    "current_task": null,
+    "color": "#F59E0B"
+  },
+  {
+    "id": "growth",
+    "name": "Growth",
+    "role": "CMO",
+    "status": "online",
+    "last_active": "2026-02-23 10:52:35",
+    "current_task": null,
+    "color": "#EC4899"
+  },
+  {
+    "id": "nova",
+    "name": "Nova",
+    "role": "CHRO",
+    "status": "online",
+    "last_active": "2026-02-23 10:52:35",
+    "current_task": null,
+    "color": "#6366F1"
+  }
+]

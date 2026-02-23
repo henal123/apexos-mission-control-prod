@@ -1,0 +1,50 @@
+[
+  {
+    "id": "task-1",
+    "title": "Fix Mission Control CSS",
+    "description": "Dashboard styles not loading in production",
+    "status": "in_progress",
+    "priority": "P0",
+    "assignee": "velocity",
+    "created_at": "2026-02-23 10:52:35",
+    "updated_at": "2026-02-23 10:52:35",
+    "assignee_name": "Velocity",
+    "assignee_color": "#10B981"
+  },
+  {
+    "id": "task-2",
+    "title": "Deploy to Vercel",
+    "description": "Push working build to production",
+    "status": "in_progress",
+    "priority": "P0",
+    "assignee": "velocity",
+    "created_at": "2026-02-23 10:52:35",
+    "updated_at": "2026-02-23 10:52:35",
+    "assignee_name": "Velocity",
+    "assignee_color": "#10B981"
+  },
+  {
+    "id": "task-3",
+    "title": "C-Suite Daily Report",
+    "description": "Generate daily digest for CEO",
+    "status": "todo",
+    "priority": "P1",
+    "assignee": "atlas",
+    "created_at": "2026-02-23 10:52:35",
+    "updated_at": "2026-02-23 10:52:35",
+    "assignee_name": "Atlas",
+    "assignee_color": "#3B82F6"
+  },
+  {
+    "id": "task-4",
+    "title": "GoHighLevel Integration",
+    "description": "Connect CRM for revenue tracking",
+    "status": "blocked",
+    "priority": "P0",
+    "assignee": "velocity",
+    "created_at": "2026-02-23 10:52:35",
+    "updated_at": "2026-02-23 10:52:35",
+    "assignee_name": "Velocity",
+    "assignee_color": "#10B981"
+  }
+]
