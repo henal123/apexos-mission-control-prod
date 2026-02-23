@@ -9,7 +9,6 @@ import {
   LayoutDashboard, 
   Users, 
   Calendar, 
-  MessageSquare, 
   FolderOpen, 
   Zap,
   Terminal,
@@ -20,6 +19,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { getGatewayUrl, getConnectionState, openClawWS, GatewayStatus } from '@/lib/openclaw-client';
 
 const NAV_ITEMS = [
   { 
@@ -63,32 +63,27 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [gatewayStatus, setGatewayStatus] = useState<{ connected: boolean; url: string }>({ 
-    connected: false, 
-    url: 'ws://127.0.0.1:18789' 
-  });
+  // BUG FIX 5: Use real gateway status from persistent WebSocket
+  const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>(getConnectionState());
 
-  // Check gateway status on mount
+  // BUG FIX 5: Subscribe to real connection state
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('/api/openclaw', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tool: 'gateway-status' }),
-        });
-        const data = await res.json();
-        setGatewayStatus({
-          connected: data.connected,
-          url: data.url || 'ws://127.0.0.1:18789'
-        });
-      } catch (err) {
-        setGatewayStatus(prev => ({ ...prev, connected: false }));
-      }
+    // Initial check
+    setGatewayStatus(getConnectionState());
+    
+    // Subscribe to connection state changes via WebSocket
+    const updateStatus = () => {
+      setGatewayStatus(getConnectionState());
     };
-
-    checkStatus();
-    const interval = setInterval(checkStatus, 30000); // Check every 30s
+    
+    // Check every 2 seconds for connection state updates
+    const interval = setInterval(updateStatus, 2000);
+    
+    // Also subscribe to WebSocket events
+    if (openClawWS) {
+      openClawWS.on('message', updateStatus);
+    }
+    
     return () => clearInterval(interval);
   }, []);
 
@@ -151,7 +146,7 @@ export function Sidebar() {
 
       {/* Footer - Connection Status */}
       <div className="p-4 space-y-3">
-        {/* Gateway Connection */}
+        {/* BUG FIX 5: Gateway Connection - shows real URL from config */}
         <div className={cn(
           "p-3 rounded-lg border",
           gatewayStatus.connected 
@@ -173,7 +168,7 @@ export function Sidebar() {
                   {gatewayStatus.connected ? 'CONNECTED' : 'DISCONNECTED'}
                 </p>
                 <p className="text-slate-500 truncate max-w-[150px]">
-                  {gatewayStatus.url}
+                  {getGatewayUrl()}
                 </p>
               </div>
             )}
@@ -199,7 +194,7 @@ export function Sidebar() {
 
         {!collapsed && (
           <p className="text-xs text-slate-600 text-center">
-            REAL DATA MODE
+            LIVE DATA MODE
           </p>
         )}
       </div>

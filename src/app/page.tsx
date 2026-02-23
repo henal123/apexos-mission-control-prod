@@ -12,10 +12,10 @@ import {
   fetchSubagents, 
   checkGatewayStatus, 
   getConnectionState, 
-  openClawWS,
-  getConfig
+  openClawWS
 } from '@/lib/openclaw-client';
 import { ConnectionSettings } from '@/components/ConnectionSettings';
+import { LiveIndicator } from '@/components/LiveIndicator';
 
 // REAL DATA ONLY - CLIENT SIDE
 export default function DashboardPage() {
@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetch, setLastFetch] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState(60);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -52,7 +52,6 @@ export default function DashboardPage() {
       }
       
       setLastFetch(new Date().toLocaleTimeString('en-US', { hour12: false, timeZone: 'UTC' }) + ' UTC');
-      setCountdown(getConfig().refreshInterval);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setConnection(prev => ({ ...prev, connected: false, error: String(err) }));
@@ -65,46 +64,78 @@ export default function DashboardPage() {
   useEffect(() => {
     setMounted(true);
     fetchData();
-    
-    // Try WebSocket connection for real-time updates
-    if (openClawWS) {
-      openClawWS.connect();
-      openClawWS.on('session_update', () => {
+
+    // Set up WebSocket connection for real-time updates
+    const setupWebSocket = async () => {
+      if (!openClawWS) return;
+
+      // Connect to WebSocket
+      await openClawWS.connect();
+
+      // Event handler for session_update events
+      const handleSessionUpdate = (data: any) => {
+        console.log('[Dashboard] Session update received:', data);
+        // Update agents data directly
         fetchData();
-      });
-    }
-    
+        // Track last update timestamp
+        setLastUpdate(new Date().toLocaleTimeString('en-US', { hour12: false, timeZone: 'UTC' }) + ' UTC');
+      };
+
+      // Event handler for sessions.changed events
+      const handleSessionsChanged = (data: any) => {
+        console.log('[Dashboard] Sessions changed:', data);
+        fetchData();
+        setLastUpdate(new Date().toLocaleTimeString('en-US', { hour12: false, timeZone: 'UTC' }) + ' UTC');
+      };
+
+      // Event handler for session.update events
+      const handleSessionUpdateSpecific = (data: any) => {
+        console.log('[Dashboard] Session update (specific):', data);
+        fetchData();
+        setLastUpdate(new Date().toLocaleTimeString('en-US', { hour12: false, timeZone: 'UTC' }) + ' UTC');
+      };
+
+      // Event handler for agent events
+      const handleAgentEvent = (data: any) => {
+        console.log('[Dashboard] Agent event:', data);
+        fetchData();
+        setLastUpdate(new Date().toLocaleTimeString('en-US', { hour12: false, timeZone: 'UTC' }) + ' UTC');
+      };
+
+      // Event handler for connect/disconnect events
+      const handleConnectionEvent = (data: any) => {
+        console.log('[Dashboard] Connection event:', data);
+        // Update connection status
+        checkGatewayStatus().then(setConnection);
+      };
+
+      // Register event listeners
+      openClawWS.on('session_update', handleSessionUpdate);
+      openClawWS.on('sessions.changed', handleSessionsChanged);
+      openClawWS.on('session.update', handleSessionUpdateSpecific);
+      openClawWS.on('agent.started', handleAgentEvent);
+      openClawWS.on('agent.ended', handleAgentEvent);
+      openClawWS.on('agent.status', handleAgentEvent);
+      openClawWS.on('connected', handleConnectionEvent);
+      openClawWS.on('disconnected', handleConnectionEvent);
+
+      // Store cleanup function
+      return () => {
+        // Note: OpenClawWebSocket doesn't support off() yet,
+        // so we just disconnect which clears all listeners
+        openClawWS?.disconnect();
+      };
+    };
+
+    setupWebSocket();
+
     return () => {
       openClawWS?.disconnect();
     };
   }, [fetchData]);
 
-  // Auto-refresh countdown
-  useEffect(() => {
-    if (!mounted || !getConfig().autoRefresh) return;
-    
-    const timer = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          fetchData();
-          return getConfig().refreshInterval;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    return () => clearInterval(timer);
-  }, [mounted, fetchData]);
-
-  // Format countdown
-  const formatCountdown = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (mins > 0) {
-      return `${mins}m ${secs.toString().padStart(2, '0')}s`;
-    }
-    return `${secs}s`;
-  };
+  // Live indicator state (placeholder for UI agent's component)
+  const [isLive] = useState(true);
 
   // Calculate stats
   const onlineAgents = agents.filter(a => a.status === 'online').length;
@@ -158,16 +189,20 @@ export default function DashboardPage() {
           {/* Last Fetch */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-slate-800/50 border-slate-700">
             <Clock className="h-4 w-4 text-slate-400" />
-            <span className="text-xs text-slate-400">
-              Last: {lastFetch || 'Never'}
-            </span>
+            <div className="text-xs">
+              <span className="text-slate-400">Last: {lastFetch || 'Never'}</span>
+              {lastUpdate && (
+                <span className="text-cyan-400 ml-1">(Live: {lastUpdate})</span>
+              )}
+            </div>
           </div>
           
-          {/* Auto-refresh */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-slate-800/50 border-slate-700">
-            <span className="text-xs text-slate-400">
-              Refresh: {formatCountdown(countdown)}
-            </span>
+          {/* Live Indicator Component */}
+          <div className="px-3 py-2 rounded-lg border bg-slate-800/50 border-slate-700">
+            <LiveIndicator 
+              connected={connection.connected} 
+              lastUpdate={lastUpdate ? new Date() : undefined}
+            />
           </div>
           
           {/* Connection Settings */}

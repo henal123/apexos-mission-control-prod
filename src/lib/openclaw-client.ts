@@ -61,19 +61,44 @@ export function updateConnectionState(update: Partial<GatewayStatus>): void {
   connectionState = { ...connectionState, ...update };
 }
 
-function parseRoleFromKey(key: string): string {
+// ============================================
+// BUG FIX 3: Better role parsing with label support
+// ============================================
+function parseRoleFromKey(key: string, label?: string, task?: string): string {
+  // First check the label/task for explicit role mentions
+  const textToCheck = `${label || ''} ${task || ''}`.toLowerCase();
+  
+  if (textToCheck.includes('ceo') || key.toLowerCase().includes('ceo')) return 'CEO';
+  if (textToCheck.includes('coo') || key.toLowerCase().includes('coo')) return 'COO';
+  if (textToCheck.includes('cmo') || key.toLowerCase().includes('cmo')) return 'CMO';
+  if (textToCheck.includes('cro') || key.toLowerCase().includes('cro')) return 'CRO';
+  if (textToCheck.includes('cto') || key.toLowerCase().includes('cto')) return 'CTO';
+  if (textToCheck.includes('cgo') || key.toLowerCase().includes('cgo')) return 'CGO';
+  if (textToCheck.includes('cfo') || key.toLowerCase().includes('cfo')) return 'CFO';
+  if (textToCheck.includes('chro') || key.toLowerCase().includes('chro')) return 'CHRO';
+  
+  // Check for agent names
+  if (textToCheck.includes('velocity')) return 'CTO';
+  if (textToCheck.includes('atlas')) return 'COO';
+  if (textToCheck.includes('monarch')) return 'CFO';
+  if (textToCheck.includes('growth')) return 'CMO';
+  if (textToCheck.includes('nova')) return 'CHRO';
+  
+  // Return label as name if available, else derive from key type
+  if (label) {
+    if (label.toLowerCase().includes('cron:')) return 'Cron Job';
+    if (label.toLowerCase().includes('subagent:')) return 'Subagent';
+    // Truncate long labels for display
+    if (label.length > 30) return label.slice(0, 27) + '...';
+    return label;
+  }
+  
+  // Check key patterns
   const keyLower = key.toLowerCase();
-  if (keyLower.includes('ceo')) return 'CEO';
-  if (keyLower.includes('coo')) return 'COO';
-  if (keyLower.includes('cmo')) return 'CMO';
-  if (keyLower.includes('cro')) return 'CRO';
-  if (keyLower.includes('cto')) return 'CTO';
-  if (keyLower.includes('cgo')) return 'CGO';
-  if (keyLower.includes('velocity')) return 'CTO';
-  if (keyLower.includes('atlas')) return 'COO';
-  if (keyLower.includes('monarch')) return 'CEO';
-  if (keyLower.includes('growth')) return 'CGO';
-  if (keyLower.includes('nova')) return 'CTO';
+  if (keyLower.includes('cron:')) return 'Cron Job';
+  if (keyLower.includes('subagent:')) return 'Subagent';
+  if (keyLower.includes('main')) return 'Main Agent';
+  
   return 'Agent';
 }
 
@@ -96,6 +121,7 @@ function nextRpcId(): string {
 /**
  * Opens a one-shot WebSocket, performs JSON-RPC handshake,
  * sends a method, gets response, and closes.
+ * FALLBACK ONLY - use openClawWS.sendRpc() for normal operations
  */
 function rpcCall(
   url: string,
@@ -205,11 +231,28 @@ function rpcCall(
 // ============================================
 
 /**
- * Check gateway status via WebSocket JSON-RPC handshake
+ * BUG FIX 1: Check gateway status via persistent WebSocket
+ * Only opens a test WebSocket if persistent connection isn't active
  */
 export async function checkGatewayStatus(): Promise<GatewayStatus> {
   const config = getConfig();
   const startTime = Date.now();
+  
+  // If persistent WebSocket is authenticated, use that
+  if (openClawWS && openClawWS.isAuthenticated()) {
+    const status: GatewayStatus = {
+      connected: true,
+      url: config.gatewayUrl,
+      tokenConfigured: !!config.gatewayToken,
+      lastFetch: new Date().toISOString(),
+      error: null,
+      responseTime: Date.now() - startTime,
+    };
+    updateConnectionState(status);
+    return status;
+  }
+  
+  // Otherwise do a quick test connection
   try {
     const result = await rpcCall(config.gatewayUrl, config.gatewayToken, 'connect', {}, 8000);
     const status: GatewayStatus = {
@@ -236,14 +279,37 @@ export async function checkGatewayStatus(): Promise<GatewayStatus> {
 }
 
 /**
- * Fetch subagents via WebSocket JSON-RPC
+ * BUG FIX 2: Fetch subagents using persistent WebSocket
  */
 export async function fetchSubagents(): Promise<{ agents: Agent[]; error?: string }> {
+  // Try using persistent WebSocket first
+  if (openClawWS && openClawWS.isAuthenticated()) {
+    try {
+      const result = await openClawWS.sendRpc('sessions.list', {});
+      
+      if (!result.ok) {
+        // Try alternate method names
+        if (!result.ok) {
+          const result2 = await openClawWS.sendRpc('session.list', {});
+          if (result2.ok) return processSessions(result2.payload);
+        }
+        
+        updateConnectionState({ connected: true, error: null });
+        return { agents: [], error: undefined };
+      }
+      
+      return processSessions(result.payload);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to fetch subagents';
+      updateConnectionState({ connected: false, error: errorMsg });
+      return { agents: [], error: errorMsg };
+    }
+  }
+  
+  // Fallback to one-shot RPC if persistent connection not available
   const config = getConfig();
   try {
-    // Try sessions.list first
     let result = await rpcCall(config.gatewayUrl, config.gatewayToken, 'sessions.list', {});
-    // If sessions.list doesn't work, try other method names
     if (!result.ok) {
       result = await rpcCall(config.gatewayUrl, config.gatewayToken, 'session.list', {});
     }
@@ -251,35 +317,40 @@ export async function fetchSubagents(): Promise<{ agents: Agent[]; error?: strin
       result = await rpcCall(config.gatewayUrl, config.gatewayToken, 'agents.list', {});
     }
     if (!result.ok) {
-      updateConnectionState({ connected: true, error: null }); // Connected but no sessions method found — return empty
+      updateConnectionState({ connected: true, error: null });
       return { agents: [], error: undefined };
     }
-
-    const sessions = result.payload?.sessions || result.payload || [];
-    if (!Array.isArray(sessions)) {
-      return { agents: [], error: undefined };
-    }
-
-    const agents: Agent[] = sessions.map((session: any) => ({
-      id: session.key?.split(':').pop() || session.id || 'unknown',
-      name: parseRoleFromKey(session.key || session.label || ''),
-      role: parseRoleFromKey(session.key || session.label || '') as Agent['role'],
-      status: determineStatus({
-        ...session,
-        startedAt: new Date(session.created_at || session.startedAt || Date.now()).getTime(),
-      } as SubagentInfo),
-      currentTask: session.metadata?.current_task || session.label || session.task || 'No task',
-      lastActive: session.last_activity || session.created_at || new Date().toISOString(),
-      sessionKey: session.key || session.sessionKey,
-    }));
-
-    updateConnectionState({ connected: true, lastFetch: new Date().toISOString(), error: null });
-    return { agents };
+    
+    return processSessions(result.payload);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Failed to fetch subagents';
     updateConnectionState({ connected: false, error: errorMsg });
     return { agents: [], error: errorMsg };
   }
+}
+
+// Helper to process sessions into Agent array
+function processSessions(payload: any): { agents: Agent[]; error?: string } {
+  const sessions = payload?.sessions || payload || [];
+  if (!Array.isArray(sessions)) {
+    return { agents: [], error: undefined };
+  }
+
+  const agents: Agent[] = sessions.map((session: any) => ({
+    id: session.key?.split(':').pop() || session.id || 'unknown',
+    name: parseRoleFromKey(session.key || '', session.label, session.task),
+    role: parseRoleFromKey(session.key || '', session.label, session.task) as Agent['role'],
+    status: determineStatus({
+      ...session,
+      startedAt: new Date(session.created_at || session.startedAt || Date.now()).getTime(),
+    } as SubagentInfo),
+    currentTask: session.metadata?.current_task || session.label || session.task || 'No task',
+    lastActive: session.last_activity || session.created_at || new Date().toISOString(),
+    sessionKey: session.key || session.sessionKey,
+  }));
+
+  updateConnectionState({ connected: true, lastFetch: new Date().toISOString(), error: null });
+  return { agents };
 }
 
 export async function executeCommand(command: string): Promise<{
@@ -295,6 +366,20 @@ export async function executeCommand(command: string): Promise<{
 }
 
 export async function readFile(filePath: string): Promise<{ content: string | null; error?: string; }> {
+  // Use persistent WebSocket if available
+  if (openClawWS && openClawWS.isAuthenticated()) {
+    try {
+      const result = await openClawWS.sendRpc('files.read', { path: filePath });
+      if (result.ok) {
+        return { content: result.payload?.content || null };
+      }
+      return { content: null, error: result.error?.message || 'Failed to read file' };
+    } catch (error) {
+      return { content: null, error: error instanceof Error ? error.message : 'Failed to read file' };
+    }
+  }
+  
+  // Fallback
   const config = getConfig();
   try {
     const result = await rpcCall(config.gatewayUrl, config.gatewayToken, 'files.read', { path: filePath });
@@ -308,6 +393,18 @@ export async function readFile(filePath: string): Promise<{ content: string | nu
 }
 
 export async function writeFile(filePath: string, content: string): Promise<{ success: boolean; error?: string; }> {
+  // Use persistent WebSocket if available
+  if (openClawWS && openClawWS.isAuthenticated()) {
+    try {
+      const result = await openClawWS.sendRpc('files.write', { path: filePath, content });
+      if (result.ok) return { success: true };
+      return { success: false, error: result.error?.message || 'Failed to write file' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to write file' };
+    }
+  }
+  
+  // Fallback
   const config = getConfig();
   try {
     const result = await rpcCall(config.gatewayUrl, config.gatewayToken, 'files.write', { path: filePath, content });
@@ -320,6 +417,7 @@ export async function writeFile(filePath: string, content: string): Promise<{ su
 
 // ============================================
 // Persistent WebSocket for real-time events
+// BUG FIX 2: Added sendRpc method
 // ============================================
 export class OpenClawWebSocket {
   private ws: WebSocket | null = null;
@@ -328,6 +426,7 @@ export class OpenClawWebSocket {
   private maxReconnectAttempts: number = 5;
   private authenticated: boolean = false;
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
+  private pendingRequests: Map<string, { resolve: (value: any) => void; reject: (reason: any) => void; timer: NodeJS.Timeout }> = new Map();
 
   connect(): Promise<boolean> {
     return new Promise((resolve) => {
@@ -383,12 +482,24 @@ export class OpenClawWebSocket {
               return;
             }
 
-            // Handle all other messages
+            // Handle RPC responses
+            if (msg.type === 'res' && msg.id && this.pendingRequests.has(msg.id)) {
+              const pending = this.pendingRequests.get(msg.id)!;
+              clearTimeout(pending.timer);
+              this.pendingRequests.delete(msg.id);
+              pending.resolve({ ok: msg.ok, payload: msg.payload, error: msg.error });
+              return;
+            }
+
+            // Handle all other messages/events
             this.emit('message', msg);
             if (msg.type === 'event') {
               this.emit(msg.event, msg.payload);
               // Map session-related events to session_update
               if (msg.event?.includes('session') || msg.event?.includes('agent')) {
+                this.emit('session_update', msg);
+              }
+              if (msg.event === 'sessions.changed' || msg.event === 'session.update') {
                 this.emit('session_update', msg);
               }
             }
@@ -400,6 +511,12 @@ export class OpenClawWebSocket {
         this.ws.onerror = (error) => {
           console.error('[OpenClaw WS] Error:', error);
           updateConnectionState({ connected: false, error: 'WebSocket error' });
+          // Reject any pending requests
+          this.pendingRequests.forEach((pending) => {
+            clearTimeout(pending.timer);
+            pending.reject({ message: 'WebSocket error' });
+          });
+          this.pendingRequests.clear();
           resolve(false);
         };
 
@@ -407,6 +524,12 @@ export class OpenClawWebSocket {
           console.log('[OpenClaw WS] Disconnected');
           this.authenticated = false;
           updateConnectionState({ connected: false });
+          // Reject any pending requests
+          this.pendingRequests.forEach((pending) => {
+            clearTimeout(pending.timer);
+            pending.reject({ message: 'Connection closed' });
+          });
+          this.pendingRequests.clear();
           this.attemptReconnect();
         };
       } catch (error) {
@@ -414,6 +537,37 @@ export class OpenClawWebSocket {
         updateConnectionState({ connected: false, error: String(error) });
         resolve(false);
       }
+    });
+  }
+
+  /**
+   * BUG FIX 2: Send RPC request over persistent WebSocket
+   */
+  sendRpc(method: string, params: Record<string, unknown> = {}, timeoutMs: number = 10000): Promise<{ ok: boolean; payload?: any; error?: any }> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.authenticated) {
+        reject({ message: 'WebSocket not connected or authenticated' });
+        return;
+      }
+      
+      const reqId = nextRpcId();
+      
+      // Set timeout
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(reqId);
+        reject({ message: 'RPC timeout' });
+      }, timeoutMs);
+      
+      // Store pending request
+      this.pendingRequests.set(reqId, { resolve, reject, timer });
+      
+      // Send request
+      this.ws.send(JSON.stringify({
+        type: 'req',
+        id: reqId,
+        method,
+        params,
+      }));
     });
   }
 
@@ -446,6 +600,11 @@ export class OpenClawWebSocket {
       this.ws.close();
       this.ws = null;
     }
+    // Clear pending requests
+    this.pendingRequests.forEach((pending) => {
+      clearTimeout(pending.timer);
+    });
+    this.pendingRequests.clear();
   }
 
   send(data: any): void {
@@ -460,3 +619,20 @@ export class OpenClawWebSocket {
 }
 
 export const openClawWS = typeof window !== 'undefined' ? new OpenClawWebSocket() : null;
+
+// BUG FIX 5: Helper to get gateway URL for display
+export function getGatewayUrl(): string {
+  return getConfig().gatewayUrl;
+}
+
+// BUG FIX 6 & 7: Listen for live events and update state
+export function subscribeToEvents(callback: (event: string, data: any) => void): () => void {
+  if (!openClawWS) return () => {};
+  
+  const handler = (data: any) => callback('session_update', data);
+  openClawWS.on('session_update', handler);
+  
+  return () => {
+    // Note: OpenClawWebSocket doesn't support unsubscribe yet
+  };
+}
