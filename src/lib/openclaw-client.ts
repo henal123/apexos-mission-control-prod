@@ -132,10 +132,10 @@ function rpcCall(
               minProtocol: 3,
               maxProtocol: 3,
               client: {
-                id: 'web',
+                id: 'cli',
                 version: '2026.2.21',
-                platform: 'browser',
-                mode: 'control-ui',
+                platform: 'linux',
+                mode: 'operator',
               },
               role: 'operator',
               scopes: ['operator.read', 'operator.write', 'operator.admin'],
@@ -166,6 +166,7 @@ function rpcCall(
               params,
             }));
           } else {
+            console.error('[RPC] Auth failed:', JSON.stringify(msg));
             clearTimeout(timer);
             ws.close();
             resolve({ ok: false, error: msg.error });
